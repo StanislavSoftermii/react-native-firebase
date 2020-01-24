@@ -170,10 +170,31 @@ RCT_EXPORT_METHOD(requestPermission:
   if ([UIApplication sharedApplication].isRegisteredForRemoteNotifications == YES) {
     customResolver(nil);
   } else {
-    [[RNFBMessagingAppDelegateInterceptor sharedInstance] setPromiseResolve:customResolver andPromiseReject:reject];
-    dispatch_async(dispatch_get_main_queue(), ^{
-      [[UIApplication sharedApplication] registerForRemoteNotifications];
-    });
+    if (@available(iOS 10.0, *)) {
+       UNAuthorizationOptions authOptions;
+       if (@available(iOS 12.0, *)) {
+         authOptions = UNAuthorizationOptionProvisional | UNAuthorizationOptionAlert | UNAuthorizationOptionSound | UNAuthorizationOptionBadge;
+       } else {
+         authOptions = UNAuthorizationOptionAlert | UNAuthorizationOptionSound | UNAuthorizationOptionBadge;
+       }
+
+       [[UNUserNotificationCenter currentNotificationCenter] requestAuthorizationWithOptions:authOptions completionHandler:^(BOOL granted, NSError *_Nullable error) {
+         if (error) {
+           [RNFBSharedUtils rejectPromiseWithNSError:reject error:error];
+         } else {
+           [[RNFBMessagingAppDelegateInterceptor sharedInstance] setPromiseResolve:customResolver andPromiseReject:reject];
+           dispatch_async(dispatch_get_main_queue(), ^{
+             [[UIApplication sharedApplication] registerForRemoteNotifications];
+           });
+         }
+       }];
+
+     } else {
+       // TODO community iOS 9 support could be added here
+       [RNFBSharedUtils rejectPromiseWithUserInfo:reject userInfo:[@{
+           @"code": @"unsupported-platform-version",
+           @"message": @"requestPermission call failed; minimum supported version requirement not met (iOS 10)."} mutableCopy]];
+     }
   }
 }
 
@@ -185,8 +206,29 @@ RCT_EXPORT_METHOD(registerForRemoteNotifications:
     return resolve(@([RCTConvert BOOL:@(YES)]));
   }
 
-  [[RNFBMessagingAppDelegateInterceptor sharedInstance] setPromiseResolve:resolve andPromiseReject:reject];
-  [[UIApplication sharedApplication] registerForRemoteNotifications];
+  if (@available(iOS 10.0, *)) {
+     UNAuthorizationOptions authOptions;
+     if (@available(iOS 12.0, *)) {
+       authOptions = UNAuthorizationOptionProvisional | UNAuthorizationOptionAlert | UNAuthorizationOptionSound | UNAuthorizationOptionBadge;
+     } else {
+       authOptions = UNAuthorizationOptionAlert | UNAuthorizationOptionSound | UNAuthorizationOptionBadge;
+     }
+  [[UNUserNotificationCenter currentNotificationCenter] requestAuthorizationWithOptions:authOptions completionHandler:^(BOOL granted, NSError *_Nullable error) {
+       if (error) {
+         [RNFBSharedUtils rejectPromiseWithNSError:reject error:error];
+       } else {
+         [[RNFBMessagingAppDelegateInterceptor sharedInstance] setPromiseResolve:resolve andPromiseReject:reject];
+         dispatch_async(dispatch_get_main_queue(), ^{
+           [[UIApplication sharedApplication] registerForRemoteNotifications];
+         });
+       }
+     }];
+   } else {
+     // TODO community iOS 9 support could be added here
+     [RNFBSharedUtils rejectPromiseWithUserInfo:reject userInfo:[@{
+         @"code": @"unsupported-platform-version",
+         @"message": @"requestPermission call failed; minimum supported version requirement not met (iOS 10)."} mutableCopy]];
+   }
 }
 
 RCT_EXPORT_METHOD(unregisterForRemoteNotifications:
